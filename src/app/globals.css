@@ -1,26 +1,53 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-border: var(--border);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  /* AILens design tokens */
+  --background:      #f9f8f6;
+  --foreground:      #111110;
+  --card:            #ffffff;
+  --card-foreground: #111110;
+  --border:          #e5e4e0;
+  --input:           #e5e4e0;
+  --muted:           #f4f3f0;
+  --muted-foreground:#888580;
+  --primary:         #111110;
+  --primary-foreground: #f9f8f6;
+  --radius:          0.5rem;
+
+  /* Brand colours */
+  --blue:            #4169e1;
+  --blue-light:      #eef1fc;
+  --green:           #2d7a4f;
+  --green-bar:       #3db870;
+  --purple:          #5b50d6;
+  --purple-bg:       #f0effe;
+  --orange:          #c4522a;
+  --orange-light:    #fef2ec;
+  --amber:           #b07e00;
+  --amber-light:     #fdf6e3;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground antialiased; }
 }
