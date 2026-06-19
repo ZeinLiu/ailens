@@ -90,6 +90,11 @@ export default function IndexPage() {
                 <span className="text-[var(--border)]">·</span>
                 <span className="font-mono text-xs text-[var(--muted-foreground)]">{p.stepCount} steps</span>
               </div>
+              {p.source && (
+                <p className="font-mono text-[11px] text-[var(--muted-foreground)] mt-1.5">
+                  via <span className="text-[var(--foreground)]">{p.source.author}</span> · {p.source.platform}
+                </p>
+              )}
             </div>
           </Link>
         ))}

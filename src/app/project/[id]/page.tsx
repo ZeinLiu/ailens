@@ -58,13 +58,23 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           <h1 className="text-3xl font-bold tracking-tight">{project.title}</h1>
           <span className={`font-mono text-[11px] px-2 py-0.5 rounded border ${DIFF_STYLES[project.difficulty]}`}>• {project.difficulty.toUpperCase()}</span>
         </div>
-        <div className="flex items-center gap-2 flex-wrap mb-5">
+        <div className="flex items-center gap-2 flex-wrap mb-3">
           {project.tools.map(t => <span key={t} className="font-mono text-xs px-2 py-0.5 border border-[var(--border)] rounded bg-white">{t}</span>)}
           <span className="text-[var(--border)]">·</span>
           <span className="font-mono text-xs text-[var(--muted-foreground)]">{project.timeEstimate}</span>
           <span className="text-[var(--border)]">·</span>
           <span className="font-mono text-xs text-[var(--muted-foreground)]">{project.stepCount} steps</span>
         </div>
+        {project.source && (
+          <p className="font-mono text-[11px] text-[var(--muted-foreground)] mb-5">
+            via{" "}
+            {project.source.url
+              ? <a href={project.source.url} target="_blank" rel="noopener noreferrer" className="text-[var(--blue)] hover:underline">{project.source.author}</a>
+              : <span className="text-[var(--foreground)]">{project.source.author}</span>
+            }
+            {" "}· {project.source.platform}
+          </p>
+        )}
         <div className="flex gap-2.5">
           <button onClick={() => setTab("build")} className="bg-[var(--foreground)] text-[var(--background)] px-5 py-2.5 rounded-md text-sm font-medium hover:bg-[#333] flex items-center gap-1.5">
             Start Building →
