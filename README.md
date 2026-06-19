@@ -12,6 +12,14 @@
 4. [Taxonomy](#taxonomy)
 5. [Content Strategy](#content-strategy)
 6. [Sourcing Strategy](#sourcing-strategy)
+   - [Entry Validity Gates](#entry-validity-gates)
+   - [Trusted Industry Leads](#trusted-industry-leads)
+   - [Ingestion Mechanism](#ingestion-mechanism)
+   - [Ingestion Pipeline](#ingestion-pipeline)
+   - [Deduplication](#deduplication)
+   - [Content Freshness](#content-freshness)
+   - [Cold Start Strategy](#cold-start-strategy)
+   - [Review Queue](#review-queue)
 7. [Tech Architecture](#tech-architecture)
 8. [Data Model](#data-model)
 9. [Trending & Relevancy](#trending--relevancy)
@@ -155,6 +163,45 @@ Personal progress dashboard:
 
 ## Content Strategy
 
+### Entry Definition
+
+An entry in AILens is a **hybrid** — a real-world AI use case that is also a buildable project guide. Every entry must satisfy two conditions simultaneously:
+
+1. **Trending signal** — it has measurable popularity or industrial relevance (engagement on a trusted platform, or a direct post from a Tier 1 industry lead)
+2. **Buildable** — it passes the buildability gate (see [Entry Validity Gates](#entry-validity-gates)) and can be decomposed into concrete implementation steps without unconfident assumptions
+
+Use cases that are industry-trending but not yet fully buildable are flagged and held until source richness is sufficient. Projects with rich implementation detail but no social signal are deprioritised.
+
+### Content Quality Standard
+
+Every entry — whether sourced from the pipeline or batch-generated — must pass these three tests before entering the review queue:
+
+**1. Outcome-first title rule**
+The title must state the real-world outcome or capability, not the technique or tool used.
+
+| Bad (technique-first) | Good (outcome-first) |
+|---|---|
+| Document Q&A with citations | Ask questions across your files and get cited answers instantly |
+| Fine-tune a small model | Train a private AI model that outperforms ChatGPT on your specific task |
+| Semantic search over your docs | Build search that understands meaning, not just keywords |
+| Build a prompt eval set | Stop guessing which AI prompt works — measure and compare them quantitatively |
+
+**2. Smart non-technical friend test**
+Before any entry is approved: could someone who knows nothing about AI read the title and tagline and understand what it does for them and why it matters? If not, rewrite. The tagline should work as a standalone tweet.
+
+**3. Dual audience card**
+The index card serves two readers simultaneously:
+- **Title + tagline** — for the curious non-expert who is scanning for something relevant to their work
+- **Tool chips + time estimate + step count** — for the experienced builder who is evaluating complexity and fit
+
+Both layers must be complete. Neither substitutes for the other.
+
+**4. Author's voice preserved**
+When an entry originates from a real source (a post, tutorial, or case study), Claude's enrichment works *around* the author's original language — it does not replace it. The author's framing, examples, and terminology are preserved. Claude adds structure and depth, not a rewrite.
+
+**5. Source and author attribution**
+Every entry carries a `source` field with: `author`, `platform`, and `url`. This is displayed on the index card (`via Author · Platform`) and as a clickable link on the detail page. Attribution is mandatory for sourced entries and encouraged even for batch-generated ones (linking to the canonical reference).
+
 ### Project Detail Schema
 
 Each project in the index carries two layers of content:
@@ -162,14 +209,16 @@ Each project in the index carries two layers of content:
 **Layer 1 — Index Card** (shown in listing)
 ```
 number          01
-title           Document Q&A with citations
+title           Ask questions across your files and get cited answers instantly
 difficulty      Beginner
 categories      [RAG]
 tools           [Python, LangChain, Chroma]
 time_estimate   ~3h
 step_count      6
 is_local        true
-tagline         Chunk PDFs, embed, retrieve, and answer grounded in your own sources
+tagline         Stop ctrl+F searching through hundreds of pages. Upload your PDFs,
+                ask in plain English, get the answer with the exact source.
+source          { author: "LangChain team", platform: "LangChain Docs", url: "..." }
 ```
 
 **Layer 2 — Detail Page** (shown when project is opened)
@@ -219,12 +268,23 @@ You are a use case analyst for an AI builder's index.
 Extract structured data from the content below.
 Output strict JSON: title, summary, categories[], difficulty,
 tools[], time_estimate, step_count, tags[], confidence, skip_reason.
-Skip if: generic hype, no practical application, tool announcement without clear use case.
+
+TITLE RULE: The title must state the real-world outcome, not the technique.
+Good: "Turn any meeting recording into structured notes automatically"
+Bad: "Transcribe & summarize meetings with Whisper"
+
+Skip if: generic hype, no practical application, tool announcement without clear
+use case, or no identifiable real-world pain point addressed.
 ```
 
 **Enrichment prompt (Pass 2)** — fills the detail page:
 ```
 Given project: {title}, {tools}, {difficulty}
+Source: {author} on {platform}
+
+IMPORTANT: Preserve the author's original framing, examples, and terminology.
+Structure and expand around their voice — do not replace it.
+
 Generate:
 1. what_it_does (3-4 sentences, no marketing language)
 2. real_world_uses (4-6 scenarios with concrete role + outcome)
@@ -233,6 +293,9 @@ Generate:
 5. steps at BEGINNER level (full code, every term explained)
 6. steps at INTERMEDIATE level (patterns, architectural notes)
 7. steps at ADVANCED level (checkpoints, tradeoffs only)
+
+Each step must include a confidence rating (0.0–1.0). Flag any step
+where confidence < 0.8 — do not generate fake steps to fill gaps.
 ```
 
 **"Stuck? Ask Claude" prompt** — scoped help at the current step:
@@ -251,61 +314,143 @@ Keep answers short. Do not jump ahead to future steps.
 
 ## Sourcing Strategy
 
-### Source Tiers
+### Entry Validity Gates
 
-| Tier | Type | Examples | Signal Quality |
-|---|---|---|---|
-| **T1 — Curated** | Newsletters, research reports | Ben's Bites, TLDR AI, McKinsey AI, a16z | Very high |
-| **T2 — Community** | Structured platforms | Product Hunt AI, Hacker News, Reddit | Medium |
-| **T3 — Broadcast** | High-volume social | Twitter/X, YouTube, LinkedIn | Low (needs filtering) |
+Every candidate item must pass **both gates** before entering the enrichment pipeline. Failing either gate = skip.
 
-### Source Inventory
+**Gate 1 — Trending signal**
 
-**Newsletters (daily/weekly ingest)**
-- Ben's Bites — bens.substack.com
-- The Rundown AI — therundown.ai
-- TLDR AI — tldr.tech/ai
-- Superhuman Newsletter — itsuperhuman.co
-- Import AI (Jack Clark) — importai.substack.com
-- Lenny's Newsletter — lennysnewsletter.com
+The item must have at least one of:
+- Measurable engagement on a known platform (likes, saves, votes, views above threshold per platform)
+- A post or share by a Tier 1 trusted industry lead (auto-passes Gate 1)
+- Cross-source coverage: the same topic appears in 2+ independent sources
 
-**APIs and Structured Sources**
-- Product Hunt API — `/v2/posts?topic=artificial-intelligence`
-- Hacker News API — topstories + keyword filter
-- GitHub Trending — `github.com/trending`
-- arXiv — `arxiv.org/search/?searchtype=cs.AI`
+Items from Tier 1 leads auto-pass Gate 1. Items from Tier 2 sources require engagement signals above threshold. Items from Tier 3 (community) require the threshold plus cross-source confirmation.
 
-**Communities**
-- r/artificial, r/ChatGPT, r/MachineLearning, r/SideProject, r/Entrepreneur
+**Gate 2 — Buildability**
 
-**Research & Reports**
-- McKinsey Global Institute, Gartner Hype Cycle, Harvard Business Review, a16z State of AI
+Run in sequence — fail fast:
 
-**Marketplaces (battle-tested use cases)**
-- Fiverr AI category, Upwork AI jobs, G2 AI software
+1. **Source richness check** — the raw content must include at least 2 of: working code, GitHub repo link, named specific tools, live demo. If it fails here, skip immediately (no Claude call).
+2. **Claude step generation with confidence** — Claude attempts to decompose the use case into implementation steps. Each step is rated 0.0–1.0 confidence. If average confidence < 0.75 or any critical step < 0.6, the item is held in a `needs_more_source` queue rather than published. No fake steps are generated to fill gaps.
+
+### Trusted Industry Leads
+
+A **Tier 1 account** is a high-conviction source whose posts on a new AI use case are treated as a trending signal and automatically pass Gate 1.
+
+**English-language Tier 1 accounts (proposed)**
+
+| Account | Platform | Specialty |
+|---|---|---|
+| Andrej Karpathy | X / YouTube | Fundamentals, education, insider AI perspective |
+| Simon Willison | X / Blog | LLM tools, practical hacks, never hype |
+| Swyx (Shawn Wang) | X / Latent Space | AI engineering, what builders actually ship |
+| Ethan Mollick | X | AI adoption in real work, non-engineer use cases |
+| Ben Tossell | X / Ben's Bites | AI tools curation and discovery |
+| Jason Liu | X / Instructor Docs | Structured outputs, RAG patterns, very applied |
+| Harrison Chase | X | Agents, RAG, LangChain patterns |
+| Jeremy Howard | X / fast.ai | Practical ML, education |
+| Matt Wolfe | X / YouTube | AI tools, massive reach, early discovery |
+| Greg Kamradt | X / YouTube | LLM notebooks, chunking, RAG patterns |
+
+**Chinese-community Tier 1 accounts (proposed)**
+
+| Account | Platform | Specialty |
+|---|---|---|
+| 李沐 (Mu Li) | Bilibili / X | Deep learning education, Dive into Deep Learning author |
+| 宝玉xp (@dotey) | X / Weibo | Translates key English AI content to Chinese, practitioner-focused |
+| 归藏 (guicang) | Xiaohongshu / WeChat | AI tools, real-world use cases, high following |
+| easychen | GitHub / X / WeChat | Developer tools, AI side projects, ships real things |
+| 硅星人 | WeChat / Weibo | AI industry news, practical products and companies |
+| 量子位 (Quantum Bit) | WeChat / Weibo | Leading Chinese AI media, enterprise deployments |
+| APPSO | WeChat | Practical AI tools from the user perspective |
+| Bilibili AI tutorial creators | Bilibili / Douyin | Short-form tutorials, younger developer audience |
+
+> **Tier 2** (~100 accounts): emerging voices, not yet Tier 1. Items from Tier 2 sources still require engagement signals to pass Gate 1 — they are not auto-passed, but their threshold is halved.
+>
+> **Tier 3** (community-nominated): anyone can nominate an account for Tier 2. Nominations require 3 endorsements from existing Tier 1 or Tier 2 accounts.
+
+### Ingestion Mechanism
+
+A hybrid model: automated cron for structured sources, opencli browser automation for social platforms, manual paste for edge cases.
+
+**opencli** (Chrome DevTools Protocol automation, 87+ platforms) handles all social media ingestion where session state is required — including Chinese platforms that need login. This avoids scraping bans and respects platform ToS by operating like a real browser session.
+
+| Source type | Mechanism | Cadence |
+|---|---|---|
+| Newsletters (Ben's Bites, TLDR AI, Import AI, etc.) | RSS / cron | Every 6h |
+| Product Hunt, Hacker News | API / cron | Every 1–6h |
+| GitHub Trending | API / cron | Every 6h |
+| Zhihu, CSDN, Juejin | opencli (session-based) | Daily |
+| Bilibili, Douyin | opencli (session-based) | Daily |
+| Xiaohongshu, Weibo | opencli (session-based) | Daily |
+| Twitter/X (Tier 1 accounts) | opencli | Daily |
+| Reddit (r/artificial, r/MachineLearning) | API + opencli | Every 6h |
+| Manual paste / URL forward | Admin panel | On demand |
 
 ### Ingestion Pipeline
 
 ```
-Source → Fetcher → Deduplicator → Extractor (Claude) → Enricher (Claude) → Scorer → Review Queue → Published
+Source → Fetcher → Gate 1 check → Deduplicator → Gate 2 check → Extractor (Claude) → Enricher (Claude) → Scorer → Review Queue → Published
 ```
 
-1. **Fetch** — Cron job pulls raw content per source (RSS, API, scrape)
-2. **Deduplicate** — Hash title+URL; semantic similarity check against existing entries (skip if >0.92)
-3. **Extract** — Claude Pass 1 structures raw content into a draft entry
-4. **Enrich** — Claude Pass 2 fills detail page content, generates steps at all levels
-5. **Score** — Compute profit_potential, complexity, initial trending_score
-6. **Review Queue** — Status: `pending_review` → manual approve/reject → `published`
+1. **Fetch** — cron or opencli pulls raw content per source
+2. **Gate 1 check** — trending signal validation (engagement threshold or Tier 1 lead)
+3. **Deduplicate** — two-layer deduplication (see below)
+4. **Gate 2 check** — source richness, then Claude confidence scoring
+5. **Extract** — Claude Pass 1 structures raw content into a draft entry
+6. **Enrich** — Claude Pass 2 fills detail page content, generates steps at all levels with per-step confidence
+7. **Score** — compute initial trending_score, source_count, cross_cultural_signal
+8. **Review Queue** — high-confidence items auto-publish; low-confidence items queue for manual review (~15–20 min/day)
+
+### Deduplication
+
+Two layers, run in sequence:
+
+**Layer 1 — Semantic similarity at ingestion**
+Embed the title + summary of every incoming item. Compare against all existing entries and pending queue items. Cosine similarity > 0.88 = duplicate. On match: merge signals (increment `source_count`, log additional source URL) but do not create a new raw item.
+
+**Layer 2 — Daily topic clustering**
+Before enrichment runs each day, group pending items into topic clusters. Items within the same cluster are merged into one enriched entry. All source URLs are preserved as evidence. The `source_count` and `cross_cultural_signal` fields are updated — an item covered by both English and Chinese sources gets a significant trending boost.
+
+### Content Freshness
+
+Entries do not have a fixed TTL. Freshness is maintained through two event-driven mechanisms:
+
+**Signal-based refresh (urgent priority)**
+Triggered by: a new major version release of a named tool in the entry (detected via GitHub Releases API / PyPI changelog), or a Tier 1 account posting a correction or "this is outdated" signal. Claude re-evaluates the affected steps and flags breaking changes.
+
+**Community flagging (high priority)**
+Users can flag any individual step as broken or outdated. Three flags on the same step triggers a refresh queue entry. Claude suggests the update; the reviewer approves. Handled silently — no public warning badge until the fix is confirmed.
+
+### Cold Start Strategy
+
+To reach a critical mass of 50–100 entries before the automated pipeline generates them organically:
+
+**Archive backfill (primary)** — run the ingestion pipeline against 3–6 months of historical content: Ben's Bites archive, Hacker News "Show HN" posts tagged AI, GitHub repos with 500+ stars in AI categories, top Zhihu AI answers.
+
+**Claude batch generation (supplement)** — for canonical AI use cases that would definitely pass both gates and are well-known enough to have rich reference material, Claude generates full entries. Condition: Claude must be able to articulate a clear real-world pain point and value add. If it cannot, the case is skipped — no entries generated without a grounded use case.
+
+A manual curation sprint of 20–30 entries (sourced from your own knowledge and bookmarks) establishes the quality baseline before automation scales it.
+
+### Review Queue
+
+- **Auto-publish:** items scoring high on both trending signal strength (≥4/5) and enrichment confidence (≥4/5) go live immediately
+- **Manual queue:** items below either threshold wait for daily review (15–20 minutes)
+- **Hold:** items that pass Gate 1 but fail Gate 2 (`needs_more_source` status) are retried when new source material arrives
+- **Threshold review:** after 30 days of watching auto-published quality, thresholds are tuned toward more automation
 
 ### Cron Schedule
 
 | Frequency | Task |
 |---|---|
 | Every 1h | Fetch Product Hunt, HN new stories |
-| Every 6h | Ingest newsletters (RSS) |
-| Every 24h | Run Claude extraction on pending raw items |
+| Every 6h | Ingest newsletters (RSS), Reddit, GitHub Trending |
+| Every 24h | opencli sweep of Tier 1 social accounts (X, Bilibili, Weibo, Douyin, Xiaohongshu) |
+| Every 24h | Run deduplication + topic clustering on pending raw items |
+| Every 24h | Run Claude extraction + enrichment on deduplicated queue |
 | Every 24h | Recompute trending scores for all projects |
-| Every 24h | Refresh relevancy scores for active users |
+| Every 24h | Check GitHub Releases / PyPI for version updates to tools mentioned in entries |
 | Every 7d | Fetch research reports, marketplace scans |
 | Every 7d | Purge raw items older than 90 days (status=skipped) |
 
@@ -377,22 +522,31 @@ Source → Fetcher → Deduplicator → Extractor (Claude) → Enricher (Claude)
 ```sql
 -- Projects (the index entries)
 create table projects (
-  id              uuid primary key default gen_random_uuid(),
-  number          smallint unique not null,
-  title           text not null,
-  tagline         text,
-  difficulty      text check (difficulty in ('Beginner','Intermediate','Advanced')),
-  categories      text[],
-  tools           text[],
-  time_estimate   text,
-  step_count      smallint,
-  is_local        boolean default false,
-  status          text default 'published',
-  trending_score  float default 0,
-  view_count      int default 0,
-  save_count      int default 0,
-  created_at      timestamptz default now(),
-  updated_at      timestamptz default now()
+  id                    uuid primary key default gen_random_uuid(),
+  number                smallint unique not null,
+  title                 text not null,
+  tagline               text,
+  difficulty            text check (difficulty in ('Beginner','Intermediate','Advanced')),
+  categories            text[],
+  tools                 text[],
+  time_estimate         text,
+  step_count            smallint,
+  is_local              boolean default false,
+  -- Source attribution (first-class field)
+  source_author         text,
+  source_platform       text,
+  source_url            text,
+  source_note           text,
+  -- Pipeline metadata
+  status                text default 'published',  -- draft | pending_review | needs_more_source | published
+  source_count          int default 1,             -- number of independent sources covering this entry
+  cross_cultural_signal boolean default false,     -- true if covered in both English and Chinese sources
+  enrichment_confidence float,                     -- avg Claude confidence across all steps
+  trending_score        float default 0,
+  view_count            int default 0,
+  save_count            int default 0,
+  created_at            timestamptz default now(),
+  updated_at            timestamptz default now()
 );
 
 -- Rich content per project (detail page)
@@ -420,6 +574,8 @@ create table project_steps (
   why             text,
   watch_out       text,
   time_estimate   text,
+  confidence      float,    -- Claude's confidence in this step (0.0–1.0). Steps < 0.8 are flagged.
+  flag_count      int default 0,  -- community "broken step" flags; ≥3 triggers refresh queue
   unique (project_id, depth, step_number)
 );
 
@@ -455,16 +611,24 @@ create table project_events (
 
 -- Raw ingestion log
 create table raw_items (
-  id              uuid primary key default gen_random_uuid(),
-  source          text,
-  url             text,
-  title           text,
-  body            text,
-  content_hash    text unique,
-  status          text default 'pending',  -- pending | extracted | skipped | published
-  skip_reason     text,
-  project_id      uuid references projects(id),
-  fetched_at      timestamptz default now()
+  id                  uuid primary key default gen_random_uuid(),
+  source              text,          -- platform name
+  source_author       text,          -- author / account name
+  source_tier         int,           -- 1 | 2 | 3 | null (community/anonymous)
+  url                 text,
+  title               text,
+  body                text,
+  content_hash        text unique,
+  embedding           vector(1536),  -- for dedup cosine similarity check
+  gate1_passed        boolean,       -- trending signal gate
+  gate2_passed        boolean,       -- buildability gate
+  enrichment_confidence float,
+  status              text default 'pending',
+    -- pending | gate1_failed | needs_more_source | extracted | skipped | published
+  skip_reason         text,
+  merged_into         uuid references raw_items(id),  -- dedup: points to the canonical item
+  project_id          uuid references projects(id),
+  fetched_at          timestamptz default now()
 );
 ```
 
@@ -683,3 +847,22 @@ Extracted from the Claude Design mockups.
 *Last updated: June 2026*
 *Design: Claude Design (Anthropic)*
 *Demo: https://zeinliu.github.io/ailens-demo/*
+
+---
+
+## Decision Log
+
+Key decisions locked during the sourcing pipeline design session.
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | Entry definition | Hybrid — a use case that is trending AND buildable becomes a project guide |
+| 2 | Trending signal sources | Platform engagement on GitHub, Reddit, HN, Zhihu, Bilibili, Douyin, Weibo, Xiaohongshu + Tier 1 lead posts auto-pass |
+| 3 | Buildability gate | Source richness check first (fail fast, no Claude call). If passes → Claude step generation with per-step confidence. Low confidence = held, not faked. |
+| 4 | Trusted leads | Tiered: ~30 Tier 1 accounts (auto-pass), ~100 Tier 2 (halved threshold), community-nominated Tier 3. English + Chinese balanced from day one. Douyin included. |
+| 5 | Ingestion mechanism | Cron for structured sources (RSS, APIs). opencli for social + Chinese platforms (session-based, 87+ platforms). Manual paste for edge cases. |
+| 6 | Deduplication | Semantic similarity at ingestion (cosine > 0.88 = merge). Daily topic clustering before enrichment. Cross-source + cross-cultural count feeds trending score. |
+| 7 | Review queue | Auto-publish high-confidence (≥4/5 on both dimensions). Low-confidence queues for ~15–20 min daily review. Re-evaluate thresholds after 30 days. |
+| 8 | Content freshness | Event-driven only (no TTL). Signal-based (tool version releases, Tier 1 corrections) + community step flagging (3 flags = refresh queue). |
+| 9 | Cold start | Archive backfill (3–6 months) + Claude batch generation for canonical cases (only if clear pain point can be articulated). Manual sprint of 20–30 entries sets quality baseline. |
+| 10 | Content quality | Outcome-first titles. Smart non-technical friend test. Dual audience card. Author's original language preserved. Source + author attribution on every entry. |
