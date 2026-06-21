@@ -10,19 +10,14 @@ const DIFF_STYLES: Record<Difficulty, string> = {
   Advanced:     "text-[var(--orange)] border-[#f5c9b5] bg-[var(--orange-light)]",
 };
 
-const DEPTH_DESCS: Record<Depth, string> = {
-  beginner:     "Full copy-paste code. Every term explained. Analogies used.",
-  intermediate: "Code patterns, not full scripts. Focus on architectural decisions.",
-  advanced:     "Checkpoints only. Tradeoffs, failure modes, production concerns.",
-};
-
 export default function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const project = PROJECTS.find(p => p.id === Number(id));
 
   const [depth, setDepth] = useState<Depth>("beginner");
   const [tab, setTab] = useState<"what" | "build">("build");
-  const [openSteps, setOpenSteps] = useState<Set<number>>(new Set([2]));
+  const [envOpen, setEnvOpen] = useState(false);
+  const [openSteps, setOpenSteps] = useState<Set<number>>(new Set([0]));
   const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState<number | null>(null);
 
@@ -39,8 +34,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   function toggleDone(i: number) {
     setDoneSteps(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
   }
-  async function copyCode(code: string, i: number) {
-    await navigator.clipboard.writeText(code);
+  async function copyPrompt(text: string, i: number) {
+    await navigator.clipboard.writeText(text);
     setCopied(i); setTimeout(() => setCopied(null), 2000);
   }
 
@@ -86,17 +81,80 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
       </div>
 
       {/* Depth switcher */}
-      <div className="border border-[var(--border)] rounded-lg px-5 py-4 mb-7 bg-white">
+      <div className="border border-[var(--border)] rounded-lg px-5 py-4 mb-5 bg-white">
         <p className="font-mono text-[11px] text-[var(--muted-foreground)] uppercase tracking-wider mb-2.5">Depth</p>
         <div className="flex gap-1 mb-2.5">
           {(["beginner","intermediate","advanced"] as Depth[]).map(d => (
-            <button key={d} onClick={() => { setDepth(d); setDoneSteps(new Set()); setOpenSteps(new Set([2])); }}
+            <button key={d} onClick={() => { setDepth(d); setDoneSteps(new Set()); setOpenSteps(new Set([0])); }}
               className={`text-sm px-3.5 py-1.5 rounded-md capitalize transition-colors ${depth === d ? "bg-[var(--background)] border border-[var(--border)] font-medium text-[var(--foreground)]" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}>
               {d.charAt(0).toUpperCase() + d.slice(1)}
             </button>
           ))}
         </div>
         <p className="text-sm text-[var(--muted-foreground)] leading-relaxed">{project.depthDesc[depth]}</p>
+      </div>
+
+      {/* Step 0 — Environment Setup */}
+      <div className="border border-[var(--border)] rounded-lg mb-7 overflow-hidden">
+        <button
+          onClick={() => setEnvOpen(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-3.5 bg-white hover:bg-[var(--background)] transition-colors"
+        >
+          <span className="font-mono text-[11px] uppercase tracking-widest text-[var(--muted-foreground)]">
+            Environment Setup
+          </span>
+          <span className={`text-[var(--muted-foreground)] text-xs transition-transform duration-200 ${envOpen ? "rotate-180" : ""}`}>∨</span>
+        </button>
+
+        {envOpen && (
+          <div className="border-t border-[var(--border)] px-5 py-4 space-y-4 bg-white">
+            {project.envSetup.prerequisites.length > 0 && (
+              <div className="flex gap-4">
+                <span className="font-mono text-[11px] text-[var(--muted-foreground)] uppercase tracking-wider w-28 shrink-0 pt-0.5">Prerequisites</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {project.envSetup.prerequisites.map(p => (
+                    <span key={p} className="font-mono text-xs px-2 py-0.5 border border-[var(--border)] rounded bg-[var(--background)]">{p}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {project.envSetup.tools.length > 0 && (
+              <div className="flex gap-4">
+                <span className="font-mono text-[11px] text-[var(--muted-foreground)] uppercase tracking-wider w-28 shrink-0 pt-0.5">Install</span>
+                <div className="space-y-2 flex-1">
+                  {project.envSetup.tools.map(t => (
+                    <div key={t.name}>
+                      <code className="font-mono text-[12px] bg-[var(--background)] border border-[var(--border)] px-2 py-0.5 rounded block mb-0.5">{t.installCmd}</code>
+                      <span className="text-[12px] text-[var(--muted-foreground)]">{t.purpose}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {project.envSetup.apiKeys.length > 0 && (
+              <div className="flex gap-4">
+                <span className="font-mono text-[11px] text-[var(--muted-foreground)] uppercase tracking-wider w-28 shrink-0 pt-0.5">API Keys</span>
+                <div className="space-y-1.5">
+                  {project.envSetup.apiKeys.map(k => (
+                    <div key={k.name} className="text-[12px]">
+                      <code className="font-mono text-[var(--blue)] mr-2">{k.name}</code>
+                      <span className="text-[var(--muted-foreground)]">{k.where}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {project.envSetup.projectStructure && (
+              <div className="flex gap-4">
+                <span className="font-mono text-[11px] text-[var(--muted-foreground)] uppercase tracking-wider w-28 shrink-0 pt-0.5">Structure</span>
+                <pre className="font-mono text-[12px] text-[var(--muted-foreground)] leading-relaxed whitespace-pre">{project.envSetup.projectStructure}</pre>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Content tabs */}
@@ -182,25 +240,56 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                   </button>
 
                   {isOpen && (
-                    <div className="pb-5 pl-9 space-y-3">
+                    <div className="pb-6 pl-9 space-y-4">
+
+                      {/* Meta row */}
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="font-mono text-[12px] text-[var(--muted-foreground)]">📁 <span className="text-[var(--foreground)]">{step.meta.location}</span></span>
+                          <span className="text-[var(--border)]">·</span>
+                          <span className="font-mono text-[12px] text-[var(--muted-foreground)]">🛠 <span className="text-[var(--foreground)]">{step.meta.tool}</span></span>
+                        </div>
+                        {step.meta.userInputs && step.meta.userInputs.length > 0 && (
+                          <p className="font-mono text-[12px] text-[var(--muted-foreground)]">
+                            🔑 Needs: {step.meta.userInputs.join(" · ")}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Body */}
                       <p className="text-sm text-[#333] leading-relaxed">{step.body}</p>
-                      {step.why && (
-                        <div className="border-l-2 border-[var(--border)] pl-3 text-[13px] text-[var(--muted-foreground)] leading-relaxed">{step.why}</div>
-                      )}
-                      {step.watchOut && (
-                        <div className="bg-[var(--orange-light)] border border-[#f5c9b5] rounded-md px-3 py-2 text-[13px] text-[var(--orange)] leading-relaxed">⚠ {step.watchOut}</div>
-                      )}
-                      {step.code && (
-                        <div className="relative">
-                          <pre className="bg-[#1a1a18] text-[#e8e6e0] rounded-md px-4 py-4 font-mono text-[13px] leading-relaxed overflow-x-auto whitespace-pre">
-                            {step.code}
-                          </pre>
-                          <button onClick={() => copyCode(step.code!, i)}
-                            className="absolute top-2.5 right-3 font-mono text-[11px] text-[#888] bg-[#2a2a28] border border-[#3a3a38] rounded px-2 py-0.5 hover:text-[#ccc]">
+
+                      {/* Prompt block */}
+                      <div className="rounded-lg border border-[#ccc8f8] bg-[var(--purple-bg)] overflow-hidden">
+                        <div className="flex items-center justify-between px-3.5 py-2 border-b border-[#ccc8f8]">
+                          <span className="font-mono text-[11px] text-[var(--purple)] uppercase tracking-wider">
+                            Run in {step.prompt.tool ?? step.meta.tool}
+                          </span>
+                          <button
+                            onClick={() => copyPrompt(step.prompt.context + "\n\n" + step.prompt.instruction, i)}
+                            className="font-mono text-[11px] text-[var(--purple)] hover:text-[#4a40c4]"
+                          >
                             {copied === i ? "copied!" : "copy"}
                           </button>
                         </div>
-                      )}
+                        <div className="px-3.5 py-3 space-y-2">
+                          <p className="font-mono text-[12px] text-[#9b93dd] leading-relaxed italic">{step.prompt.context}</p>
+                          <p className="font-mono text-[13px] text-[#3d3580] leading-relaxed whitespace-pre-wrap">{step.prompt.instruction}</p>
+                        </div>
+                      </div>
+
+                      {/* Verify block */}
+                      <div className="rounded-lg border border-[#c2e8d2] bg-[#edf7f2] overflow-hidden">
+                        <div className="flex items-center px-3.5 py-2 border-b border-[#c2e8d2]">
+                          <span className="font-mono text-[11px] text-[var(--green)] uppercase tracking-wider">✓ Verify</span>
+                        </div>
+                        <div className="px-3.5 py-3 space-y-2">
+                          <p className="font-mono text-[12px] text-[var(--muted-foreground)]">Run: <span className="text-[var(--foreground)]">{step.verify.run}</span></p>
+                          <pre className="font-mono text-[12px] text-[#2d5a3d] leading-relaxed whitespace-pre-wrap bg-white border border-[#c2e8d2] rounded px-3 py-2">{step.verify.expect}</pre>
+                        </div>
+                      </div>
+
+                      {/* Time + Mark done */}
                       <div className="flex items-center justify-between pt-1">
                         <span className="font-mono text-xs text-[var(--muted-foreground)]">{step.time}</span>
                         <button onClick={() => toggleDone(i)}
@@ -208,6 +297,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                           {isDone ? "✓ Done" : "Mark done →"}
                         </button>
                       </div>
+
                     </div>
                   )}
                 </div>
@@ -215,15 +305,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
             })}
           </div>
 
-          {/* Time remaining */}
-          <div className="mt-7 border border-[var(--border)] rounded-lg px-5 py-4 bg-white">
-            <p className="font-mono text-[11px] text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">Time Remaining</p>
-            <p className="text-3xl font-bold tracking-tight mb-0.5">{project.timeEstimate}</p>
-            <p className="text-sm text-[var(--muted-foreground)]">of {project.timeEstimate} estimated</p>
-          </div>
-
           {/* Ask Claude */}
-          <div className="mt-4 border border-[#ccc8f8] rounded-lg px-5 py-4 bg-[var(--purple-bg)]">
+          <div className="mt-7 border border-[#ccc8f8] rounded-lg px-5 py-4 bg-[var(--purple-bg)]">
             <button className="w-full flex items-center justify-center gap-2 bg-[var(--purple)] text-white rounded-md py-2.5 text-sm font-medium hover:bg-[#4a40c4] mb-2.5">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                 <rect x="2" y="3" width="12" height="9" rx="2" stroke="white" strokeWidth="1.4"/>
