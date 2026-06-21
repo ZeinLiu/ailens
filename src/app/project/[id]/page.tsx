@@ -104,7 +104,11 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         }),
         signal: controller.signal,
       });
-      if (!res.ok || !res.body) return;
+      if (!res.ok || !res.body) {
+        const msg = res.status === 401 ? "Sign in to use Ask Claude." : "Something went wrong. Please try again.";
+        setChatHistories(prev => ({ ...prev, [i]: [...(prev[i] ?? []), { role: "assistant" as const, content: msg }] }));
+        return;
+      }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let assistantText = "";
