@@ -20,7 +20,10 @@ export default function Nav() {
   async function signIn() {
     await supabaseBrowser.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${location.origin}/auth/callback`,
+        queryParams: { prompt: "select_account" },
+      },
     });
   }
 
