@@ -35,13 +35,29 @@ export async function POST(
       return Response.json({ error: "Item not found" }, { status: 404 });
     }
 
-    // Compute next num (10, 11, 12…)
-    const { count } = await supabase
+    // Check if already approved (handles status-update-failed-then-retry case)
+    const { data: existing } = await supabase
       .from("pipeline_projects")
-      .select("id", { count: "exact", head: true });
+      .select("num")
+      .eq("raw_item_id", id)
+      .maybeSingle();
 
-    const nextNum = 10 + (count ?? 0);
-    const projectData: Project = {
+    if (existing) {
+      // Already inserted — just ensure status is marked approved
+      await supabase.from("raw_items").update({ status: "approved" }).eq("id", id);
+      return Response.json({ ok: true, num: parseInt(existing.num) });
+    }
+
+    // Compute next num atomically-ish: use max rather than count to handle gaps
+    const { data: maxRow } = await supabase
+      .from("pipeline_projects")
+      .select("num")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const nextNum = maxRow ? parseInt(maxRow.num) + 1 : 10;
+    const projectData = {
       ...(item.extracted_json as Omit<Project, "id" | "num">),
       id: nextNum,
       num: String(nextNum),
@@ -54,7 +70,16 @@ export async function POST(
     });
     if (insertErr) return Response.json({ error: insertErr.message }, { status: 500 });
 
-    await supabase.from("raw_items").update({ status: "approved" }).eq("id", id);
+    // Update status — if this fails, admin retry will hit the "already approved" path above
+    const { error: statusErr } = await supabase
+      .from("raw_items")
+      .update({ status: "approved" })
+      .eq("id", id);
+    if (statusErr) {
+      console.error("Status update failed after insert:", statusErr.message);
+      // Return success — project is published, admin retry will fix the status
+      return Response.json({ ok: true, num: nextNum, warning: "status_update_failed" });
+    }
 
     return Response.json({ ok: true, num: nextNum });
   }
