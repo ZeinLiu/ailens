@@ -2,7 +2,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { use } from "react";
-import { PROJECTS, type Depth, type Difficulty } from "@/lib/data";
+import { PROJECTS, type Depth, type Difficulty, type Project } from "@/lib/data";
+import { supabaseBrowser } from "@/lib/supabase/client";
 
 const DIFF_STYLES: Record<Difficulty, string> = {
   Beginner:     "text-[var(--blue)] border-[#c5d0f7] bg-[var(--blue-light)]",
@@ -12,7 +13,26 @@ const DIFF_STYLES: Record<Difficulty, string> = {
 
 export default function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const project = PROJECTS.find(p => p.id === Number(id));
+  const hardcodedProject = PROJECTS.find(p => p.id === Number(id));
+
+  const [dbProject, setDbProject] = useState<Project | null>(null);
+  const [dbChecking, setDbChecking] = useState(!hardcodedProject);
+
+  useEffect(() => {
+    if (!hardcodedProject) {
+      supabaseBrowser
+        .from("pipeline_projects")
+        .select("data")
+        .filter("data->>id", "eq", id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data?.data) setDbProject(data.data as Project);
+          setDbChecking(false);
+        });
+    }
+  }, [hardcodedProject, id]);
+
+  const project = hardcodedProject ?? dbProject;
 
   const [depth, setDepth] = useState<Depth>("beginner");
   const [tab, setTab] = useState<"what" | "build">("build");
@@ -60,6 +80,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     });
   }, [project?.id, depth, project?.steps]);
 
+  if (!project && dbChecking) return <div className="px-8 py-16 text-[var(--muted-foreground)]">Loading…</div>;
   if (!project) return <div className="px-8 py-16 text-[var(--muted-foreground)]">Project not found.</div>;
 
   const steps = project.steps[depth];
