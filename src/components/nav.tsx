@@ -25,8 +25,9 @@ export default function Nav() {
   }
 
   async function signOut() {
-    await supabaseBrowser.auth.signOut();
+    await fetch("/auth/signout", { method: "POST" });
     setUser(null);
+    window.location.href = "/";
   }
 
   return (
