@@ -107,10 +107,13 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { url, content: manualContent } = body;
-  if (!url || typeof url !== "string") {
+  const { url: rawUrl, content: manualContent } = body;
+  if (!rawUrl || typeof rawUrl !== "string") {
     return Response.json({ error: "url required" }, { status: 400 });
   }
+  // Handle share strings like "【Title】 https://..." pasted from mobile apps
+  const urlMatch = rawUrl.match(/https?:\/\/\S+/);
+  const url = urlMatch ? urlMatch[0] : rawUrl;
 
   // Content strategy: manual paste > playwright queue > yt-dlp video > plain fetch
   let pageContent: string;
