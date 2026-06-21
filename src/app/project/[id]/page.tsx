@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { use } from "react";
 import { PROJECTS, type Depth, type Difficulty } from "@/lib/data";
@@ -20,6 +20,36 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const [openSteps, setOpenSteps] = useState<Set<number>>(new Set([0]));
   const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState<number | null>(null);
+  const [loadingProgress, setLoadingProgress] = useState(true);
+
+  useEffect(() => {
+    if (!project) return;
+    fetch(`/api/progress/${project.id}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data?.completed_steps) {
+          setDoneSteps(new Set(data.completed_steps));
+        }
+        if (data?.depth) {
+          setDepth(data.depth as Depth);
+        }
+      })
+      .finally(() => setLoadingProgress(false));
+  }, [project?.id]);
+
+  const toggleDone = useCallback(async (i: number) => {
+    // Optimistic update
+    setDoneSteps(prev => {
+      const s = new Set(prev);
+      s.has(i) ? s.delete(i) : s.add(i);
+      return s;
+    });
+    await fetch(`/api/progress/${project?.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stepIndex: i, depth, totalSteps: project?.steps[depth].length ?? 0 }),
+    });
+  }, [project?.id, depth, project?.steps]);
 
   if (!project) return <div className="px-8 py-16 text-[var(--muted-foreground)]">Project not found.</div>;
 
@@ -30,9 +60,6 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
 
   function toggleStep(i: number) {
     setOpenSteps(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
-  }
-  function toggleDone(i: number) {
-    setDoneSteps(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
   }
   async function copyPrompt(text: string, i: number) {
     await navigator.clipboard.writeText(text);
