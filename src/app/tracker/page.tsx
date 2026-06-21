@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { PROJECTS, DIFFICULTIES, type Difficulty } from "@/lib/data";
+import { PROJECTS, DIFFICULTIES, type Difficulty, type Depth } from "@/lib/data";
 
 type ProgressRow = {
   project_id: number;
@@ -51,12 +51,14 @@ export default function TrackerPage() {
 
   function Card({ project, variant }: { project: typeof PROJECTS[0]; variant: "notStarted" | "inProgress" | "completed" }) {
     const row = progressMap[project.id];
+    const depthKey = (row?.depth ?? "beginner") as Depth;
+    const depthStepCount = project.steps[depthKey].length || project.stepCount;
     const doneCount = row?.completed_steps?.length ?? 0;
-    const pct = variant === "completed" ? 100 : Math.round((doneCount / project.stepCount) * 100);
+    const pct = variant === "completed" ? 100 : Math.round((doneCount / depthStepCount) * 100);
     const barColor = variant === "completed" ? "bg-[var(--green-bar)]" : "bg-[var(--blue)]";
     const label = variant === "completed"
-      ? `Complete · ${project.stepCount}/${project.stepCount}`
-      : `Step ${doneCount} of ${project.stepCount}`;
+      ? `Complete · ${depthStepCount}/${depthStepCount}`
+      : `Step ${doneCount} of ${depthStepCount}`;
 
     return (
       <Link href={`/project/${project.id}`} className="block border border-[var(--border)] rounded-lg px-4.5 py-4 bg-white hover:border-[#ccc] transition-colors mb-2.5">
