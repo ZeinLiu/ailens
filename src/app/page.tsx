@@ -1,7 +1,8 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { PROJECTS, CATEGORIES, DIFFICULTIES, type Difficulty, type Category } from "@/lib/data";
+import { PROJECTS, CATEGORIES, DIFFICULTIES, type Difficulty, type Category, type Project } from "@/lib/data";
+import { supabaseBrowser } from "@/lib/supabase/client";
 
 const DIFF_STYLES: Record<Difficulty, string> = {
   Beginner:     "text-[var(--blue)] border-[#c5d0f7] bg-[var(--blue-light)]",
@@ -13,14 +14,30 @@ export default function IndexPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<"All" | Category>("All");
   const [difficulty, setDifficulty] = useState<"All" | Difficulty>("All");
+  const [pipelineProjects, setPipelineProjects] = useState<Project[]>([]);
 
-  const filtered = useMemo(() => PROJECTS.filter(p => {
+  useEffect(() => {
+    supabaseBrowser
+      .from("pipeline_projects")
+      .select("data")
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        if (data) setPipelineProjects(data.map((r: { data: Project }) => r.data));
+      });
+  }, []);
+
+  const allProjects = useMemo(
+    () => [...PROJECTS, ...pipelineProjects],
+    [pipelineProjects]
+  );
+
+  const filtered = useMemo(() => allProjects.filter(p => {
     const catOk = category === "All" || p.categories.includes(category);
     const diffOk = difficulty === "All" || p.difficulty === difficulty;
     const q = search.toLowerCase();
     const searchOk = !q || p.title.toLowerCase().includes(q) || p.tools.join(" ").toLowerCase().includes(q) || p.tagline.toLowerCase().includes(q);
     return catOk && diffOk && searchOk;
-  }), [search, category, difficulty]);
+  }), [search, category, difficulty, allProjects]);
 
   return (
     <div>
