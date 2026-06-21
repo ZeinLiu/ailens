@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { use } from "react";
 import { PROJECTS, type Depth, type Difficulty } from "@/lib/data";
@@ -23,8 +23,9 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const [loadingProgress, setLoadingProgress] = useState(true);
   const [saved, setSaved] = useState(false);
   const [chatHistories, setChatHistories] = useState<Record<number, Array<{role: "user" | "assistant", content: string}>>>({});
-  const [chatInput, setChatInput] = useState("");
+  const [chatInputs, setChatInputs] = useState<Record<number, string>>({});
   const [chatLoading, setChatLoading] = useState<number | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!project) return;
@@ -75,9 +76,12 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   }
 
   const askClaude = useCallback(async (i: number) => {
-    if (!chatInput.trim() || chatLoading !== null) return;
-    const userMsg = chatInput.trim();
-    setChatInput("");
+    if (!(chatInputs[i] ?? "").trim() || chatLoading !== null) return;
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const userMsg = (chatInputs[i] ?? "").trim();
+    setChatInputs(prev => ({ ...prev, [i]: "" }));
     const step = steps[i];
     const prevHistory = chatHistories[i] ?? [];
     const newHistory: Array<{role: "user" | "assistant", content: string}> = [
@@ -98,6 +102,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           tools: step.meta.tool,
           messages: newHistory,
         }),
+        signal: controller.signal,
       });
       if (!res.ok || !res.body) return;
       const reader = res.body.getReader();
@@ -118,9 +123,16 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         });
       }
     } finally {
+      abortControllerRef.current = null;
       setChatLoading(null);
     }
-  }, [chatInput, chatLoading, chatHistories, steps, project, depth]);
+  }, [chatInputs, chatLoading, chatHistories, steps, project, depth]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   return (
     <div className="max-w-2xl px-8 pb-20">
@@ -399,8 +411,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                         ))}
                         <div className="flex gap-2 items-end">
                           <textarea
-                            value={chatInput}
-                            onChange={e => setChatInput(e.target.value)}
+                            value={chatInputs[i] ?? ""}
+                            onChange={e => setChatInputs(prev => ({ ...prev, [i]: e.target.value }))}
                             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); askClaude(i); } }}
                             placeholder="Paste an error or describe where you're stuck…"
                             rows={2}
@@ -409,7 +421,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                           />
                           <button
                             onClick={() => askClaude(i)}
-                            disabled={chatLoading !== null || !chatInput.trim()}
+                            disabled={chatLoading !== null || !(chatInputs[i] ?? "").trim()}
                             className="px-3 py-2 bg-[var(--purple)] text-white text-[12px] font-medium rounded-md hover:bg-[#4a40c4] disabled:opacity-50 shrink-0"
                           >
                             {chatLoading === i ? "…" : "Ask"}
