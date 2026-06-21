@@ -31,6 +31,7 @@ export default function AdminPage() {
   const [items, setItems] = useState<RawItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [url, setUrl] = useState("");
+  const [content, setContent] = useState("");
   const [ingesting, setIngesting] = useState(false);
   const [ingestMsg, setIngestMsg] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
@@ -53,12 +54,13 @@ export default function AdminPage() {
     const res = await fetch("/api/ingest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: url.trim() }),
+      body: JSON.stringify({ url: url.trim(), content: content.trim() || undefined }),
     });
     const data = await res.json();
     if (res.ok) {
       setIngestMsg(`✓ "${data.title}" — confidence: ${data.confidence.toFixed(2)}`);
       setUrl("");
+      setContent("");
       load();
     } else {
       setIngestMsg(`✗ ${data.error}`);
@@ -102,6 +104,13 @@ export default function AdminPage() {
             {ingesting ? "Extracting…" : "Extract"}
           </button>
         </div>
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="Transcript or description (optional — paste to skip URL fetch, required for videos)"
+          rows={4}
+          className="w-full mt-2 text-sm border border-[var(--border)] rounded-md px-3 py-2 focus:outline-none focus:border-[var(--blue)] resize-y font-mono"
+        />
         {ingestMsg && (
           <p className="font-mono text-[12px] mt-2 text-[var(--muted-foreground)]">{ingestMsg}</p>
         )}
