@@ -22,6 +22,9 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const [copied, setCopied] = useState<number | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [chatHistories, setChatHistories] = useState<Record<number, Array<{role: "user" | "assistant", content: string}>>>({});
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState<number | null>(null);
 
   useEffect(() => {
     if (!project) return;
@@ -70,6 +73,54 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     await navigator.clipboard.writeText(text);
     setCopied(i); setTimeout(() => setCopied(null), 2000);
   }
+
+  const askClaude = useCallback(async (i: number) => {
+    if (!chatInput.trim() || chatLoading !== null) return;
+    const userMsg = chatInput.trim();
+    setChatInput("");
+    const step = steps[i];
+    const prevHistory = chatHistories[i] ?? [];
+    const newHistory: Array<{role: "user" | "assistant", content: string}> = [
+      ...prevHistory,
+      { role: "user", content: userMsg },
+    ];
+    setChatHistories(prev => ({ ...prev, [i]: newHistory }));
+    setChatLoading(i);
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectTitle: project.title,
+          stepIndex: i,
+          stepTitle: step.title,
+          depth,
+          tools: step.meta.tool,
+          messages: newHistory,
+        }),
+      });
+      if (!res.ok || !res.body) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let assistantText = "";
+      setChatHistories(prev => ({
+        ...prev,
+        [i]: [...(prev[i] ?? []), { role: "assistant" as const, content: "" }],
+      }));
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        assistantText += decoder.decode(value, { stream: true });
+        setChatHistories(prev => {
+          const hist = [...(prev[i] ?? [])];
+          hist[hist.length - 1] = { role: "assistant" as const, content: assistantText };
+          return { ...prev, [i]: hist };
+        });
+      }
+    } finally {
+      setChatLoading(null);
+    }
+  }, [chatInput, chatLoading, chatHistories, steps, project, depth]);
 
   return (
     <div className="max-w-2xl px-8 pb-20">
@@ -333,6 +384,39 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                         </button>
                       </div>
 
+                      {/* Chat */}
+                      <div className="pt-3 space-y-3 border-t border-[var(--border)]">
+                        {(chatHistories[i] ?? []).map((msg, mi) => (
+                          <div key={mi} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                            <div className={`max-w-[85%] rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap ${
+                              msg.role === "user"
+                                ? "bg-[var(--purple)] text-white"
+                                : "bg-[var(--background)] border border-[var(--border)] text-[var(--foreground)]"
+                            }`}>
+                              {msg.content || (chatLoading === i ? "…" : "")}
+                            </div>
+                          </div>
+                        ))}
+                        <div className="flex gap-2 items-end">
+                          <textarea
+                            value={chatInput}
+                            onChange={e => setChatInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); askClaude(i); } }}
+                            placeholder="Paste an error or describe where you're stuck…"
+                            rows={2}
+                            disabled={chatLoading !== null}
+                            className="flex-1 resize-none font-mono text-[12px] border border-[var(--border)] rounded-md px-3 py-2 bg-white focus:outline-none focus:border-[var(--purple)] disabled:opacity-50"
+                          />
+                          <button
+                            onClick={() => askClaude(i)}
+                            disabled={chatLoading !== null || !chatInput.trim()}
+                            className="px-3 py-2 bg-[var(--purple)] text-white text-[12px] font-medium rounded-md hover:bg-[#4a40c4] disabled:opacity-50 shrink-0"
+                          >
+                            {chatLoading === i ? "…" : "Ask"}
+                          </button>
+                        </div>
+                      </div>
+
                     </div>
                   )}
                 </div>
@@ -340,17 +424,6 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
             })}
           </div>
 
-          {/* Ask Claude */}
-          <div className="mt-7 border border-[#ccc8f8] rounded-lg px-5 py-4 bg-[var(--purple-bg)]">
-            <button className="w-full flex items-center justify-center gap-2 bg-[var(--purple)] text-white rounded-md py-2.5 text-sm font-medium hover:bg-[#4a40c4] mb-2.5">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <rect x="2" y="3" width="12" height="9" rx="2" stroke="white" strokeWidth="1.4"/>
-                <path d="M5 13l1.5-2h3L11 13" stroke="white" strokeWidth="1.4"/>
-              </svg>
-              Stuck? Ask Claude
-            </button>
-            <p className="text-[13px] text-[#6b60c0] leading-relaxed">Paste an error or describe where you&apos;re blocked — get an answer scoped to this step.</p>
-          </div>
         </div>
       )}
     </div>
