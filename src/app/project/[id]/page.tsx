@@ -21,20 +21,25 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState<number | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(true);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!project) return;
-    fetch(`/api/progress/${project.id}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data?.completed_steps) {
-          setDoneSteps(new Set(data.completed_steps));
-        }
-        if (data?.depth) {
-          setDepth(data.depth as Depth);
-        }
-      })
-      .finally(() => setLoadingProgress(false));
+    Promise.all([
+      fetch(`/api/progress/${project.id}`).then(r => r.json()),
+      fetch(`/api/saved/${project.id}`).then(r => r.json()),
+    ]).then(([progress, savedData]) => {
+      if (progress?.completed_steps) setDoneSteps(new Set(progress.completed_steps));
+      if (progress?.depth) setDepth(progress.depth as Depth);
+      if (savedData?.saved !== undefined) setSaved(savedData.saved);
+    }).finally(() => setLoadingProgress(false));
+  }, [project?.id]);
+
+  const toggleSave = useCallback(async () => {
+    setSaved(prev => !prev); // optimistic
+    const res = await fetch(`/api/saved/${project?.id}`, { method: "POST" });
+    const data = await res.json();
+    if (data.saved !== undefined) setSaved(data.saved);
   }, [project?.id]);
 
   const toggleDone = useCallback(async (i: number) => {
@@ -101,8 +106,11 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           <button onClick={() => setTab("build")} className="bg-[var(--foreground)] text-[var(--background)] px-5 py-2.5 rounded-md text-sm font-medium hover:bg-[#333] flex items-center gap-1.5">
             Start Building →
           </button>
-          <button className="border border-[var(--border)] px-5 py-2.5 rounded-md text-sm font-medium hover:bg-white">
-            Save
+          <button
+            onClick={toggleSave}
+            className={`border border-[var(--border)] px-5 py-2.5 rounded-md text-sm font-medium hover:bg-white transition-colors ${saved ? "text-[var(--blue)] border-[var(--blue)]" : ""}`}
+          >
+            {saved ? "Saved ✓" : "Save"}
           </button>
         </div>
       </div>
