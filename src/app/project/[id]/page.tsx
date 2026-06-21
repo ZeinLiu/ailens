@@ -80,21 +80,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     });
   }, [project?.id, depth, project?.steps]);
 
-  if (!project && dbChecking) return <div className="px-8 py-16 text-[var(--muted-foreground)]">Loading…</div>;
-  if (!project) return <div className="px-8 py-16 text-[var(--muted-foreground)]">Project not found.</div>;
-
-  const steps = project.steps[depth];
-  const total = steps.length;
-  const done = doneSteps.size;
-  const pct = total ? Math.round((done / total) * 100) : 0;
-
-  function toggleStep(i: number) {
-    setOpenSteps(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
-  }
-  async function copyPrompt(text: string, i: number) {
-    await navigator.clipboard.writeText(text);
-    setCopied(i); setTimeout(() => setCopied(null), 2000);
-  }
+  // null-safe — empty array when project is still loading
+  const steps = project?.steps[depth] ?? [];
 
   const askClaude = useCallback(async (i: number) => {
     if (!(chatInputs[i] ?? "").trim() || chatLoading !== null) return;
@@ -116,11 +103,11 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          projectTitle: project.title,
+          projectTitle: project?.title,
           stepIndex: i,
-          stepTitle: step.title,
+          stepTitle: step?.title,
           depth,
-          tools: step.meta.tool,
+          tools: step?.meta.tool,
           messages: newHistory,
         }),
         signal: controller.signal,
@@ -158,6 +145,22 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
       abortControllerRef.current?.abort();
     };
   }, []);
+
+  // All hooks above — safe to early-return now
+  if (!project && dbChecking) return <div className="px-8 py-16 text-[var(--muted-foreground)]">Loading…</div>;
+  if (!project) return <div className="px-8 py-16 text-[var(--muted-foreground)]">Project not found.</div>;
+
+  const total = steps.length;
+  const done = doneSteps.size;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+
+  function toggleStep(i: number) {
+    setOpenSteps(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
+  }
+  async function copyPrompt(text: string, i: number) {
+    await navigator.clipboard.writeText(text);
+    setCopied(i); setTimeout(() => setCopied(null), 2000);
+  }
 
   return (
     <div className="max-w-2xl px-8 pb-20">
