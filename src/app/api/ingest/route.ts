@@ -14,8 +14,14 @@ const EXEC_ENV = {
   PATH: `${process.env.PATH}:/opt/homebrew/bin:/usr/local/bin`,
 };
 
+// YouTube only — Bilibili moved to Playwright path
 function isVideoUrl(url: string): boolean {
-  return /youtube\.com\/watch|youtu\.be\/|bilibili\.com\/video/.test(url);
+  return /youtube\.com\/watch|youtu\.be\//.test(url);
+}
+
+// Chinese platforms that require a logged-in browser session
+function isPlaywrightUrl(url: string): boolean {
+  return /bilibili\.com|douyin\.com|xiaohongshu\.com|xhslink\.com/.test(url);
 }
 
 function cleanVtt(raw: string): string {
@@ -106,10 +112,27 @@ export async function POST(request: Request) {
     return Response.json({ error: "url required" }, { status: 400 });
   }
 
-  // Content strategy: manual paste > video transcript > plain fetch
+  // Content strategy: manual paste > playwright queue > yt-dlp video > plain fetch
   let pageContent: string;
   if (manualContent?.trim()) {
     pageContent = manualContent.trim();
+  } else if (isPlaywrightUrl(url)) {
+    // Queue for Mac worker — return immediately, no Claude call
+    const { data, error } = await supabase
+      .from("raw_items")
+      .insert({
+        url,
+        html: null,
+        extracted_json: null,
+        status: "pending_playwright",
+        confidence: null,
+        submitted_by: user.id,
+      })
+      .select("id")
+      .single();
+
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ id: data.id, status: "pending_playwright" });
   } else if (isVideoUrl(url)) {
     try {
       pageContent = await fetchVideoTranscript(url);

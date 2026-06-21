@@ -25,6 +25,10 @@ const statusBadge = (s: string) =>
     ? "bg-green-100 text-green-700"
     : s === "rejected"
     ? "bg-red-100 text-red-700"
+    : s === "pending_playwright"
+    ? "bg-blue-100 text-blue-700"
+    : s === "extraction_failed"
+    ? "bg-red-100 text-red-600"
     : "bg-amber-100 text-amber-700";
 
 export default function AdminPage() {
@@ -58,7 +62,11 @@ export default function AdminPage() {
     });
     const data = await res.json();
     if (res.ok) {
-      setIngestMsg(`✓ "${data.title}" — confidence: ${data.confidence.toFixed(2)}`);
+      if (data.status === "pending_playwright") {
+        setIngestMsg(`⏳ Queued for Mac worker — will appear in queue when processed`);
+      } else {
+        setIngestMsg(`✓ "${data.title}" — confidence: ${data.confidence.toFixed(2)}`);
+      }
       setUrl("");
       setContent("");
       load();
